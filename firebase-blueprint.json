@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      }
+    },
+    "Medication": {
+      "title": "Medication",
+      "description": "A medication entry",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "dosage": { "type": "string" },
+        "frequency": { "type": "string", "enum": ["daily", "weekly", "as_needed"] },
+        "times": { "type": "array" },
+        "stock": { "type": "number" },
+        "totalStock": { "type": "number" },
+        "unit": { "type": "string" },
+        "startDate": { "type": "string" },
+        "notes": { "type": "string" },
+        "active": { "type": "boolean" },
+        "reminderEnabled": { "type": "boolean" },
+        "imageUrl": { "type": "string" },
+        "reminderSound": { "type": "string" }
+      },
+      "required": ["name", "dosage", "frequency", "times", "stock", "totalStock", "unit", "startDate", "active"]
+    },
+    "MedicationLog": {
+      "title": "MedicationLog",
+      "description": "A log of medication taken or skipped",
+      "type": "object",
+      "properties": {
+        "medicationId": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "status": { "type": "string", "enum": ["taken", "skipped"] }
+      },
+      "required": ["medicationId", "timestamp", "status"]
+    },
+    "ActionLog": {
+      "title": "ActionLog",
+      "description": "A log of user actions",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["added", "deleted", "updated", "taken", "skipped"] },
+        "medicationId": { "type": "string" },
+        "medicationName": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "details": { "type": "string" }
+      },
+      "required": ["type", "medicationId", "medicationName", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents"
+    },
+    "/users/{userId}/medications/{medicationId}": {
+      "schema": "Medication",
+      "description": "User's medications"
+    },
+    "/users/{userId}/logs/{logId}": {
+      "schema": "MedicationLog",
+      "description": "User's medication logs"
+    },
+    "/users/{userId}/actionLogs/{actionLogId}": {
+      "schema": "ActionLog",
+      "description": "User action history logs"
+    }
+  }
+}

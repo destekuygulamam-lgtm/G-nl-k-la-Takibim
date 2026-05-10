@@ -1,0 +1,105 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitives
+    function isValidId(id) { 
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+
+    // Validation Blueprint: User
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'createdAt']) && 
+             data.keys().size() == 2 &&
+             data.email is string && data.email.size() <= 200 &&
+             data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    // Validation Blueprint: Medication
+    function isValidMedication(data) {
+      return data.keys().hasAll(['name', 'dosage', 'frequency', 'times', 'stock', 'totalStock', 'unit', 'startDate', 'active']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.dosage is string && data.dosage.size() <= 100 &&
+             data.frequency is string && (data.frequency == 'daily' || data.frequency == 'weekly' || data.frequency == 'as_needed') &&
+             data.times is list && data.times.size() <= 50 && (data.times.size() == 0 || data.times[0] is string) &&
+             data.stock is number && data.stock >= 0 &&
+             data.totalStock is number && data.totalStock >= 0 &&
+             data.unit is string && data.unit.size() <= 100 &&
+             data.startDate is string && data.startDate.size() <= 50 &&
+             data.active is bool &&
+             (data.keys().hasAll(['notes']) ? (data.notes is string && data.notes.size() <= 1000) : true) &&
+             (data.keys().hasAll(['reminderEnabled']) ? data.reminderEnabled is bool : true) &&
+             (data.keys().hasAll(['imageUrl']) ? (data.imageUrl is string && data.imageUrl.size() <= 1000000) : true) &&
+             (data.keys().hasAll(['reminderSound']) ? (data.reminderSound is string && data.reminderSound.size() <= 100) : true) &&
+             (data.keys().hasAll(['id']) ? (data.id is string && data.id.size() <= 128) : true);
+    }
+
+    // Validation Blueprint: MedicationLog
+    function isValidMedicationLog(data) {
+      return data.keys().hasAll(['medicationId', 'timestamp', 'status']) &&
+             data.medicationId is string && data.medicationId.size() > 0 && data.medicationId.size() <= 128 &&
+             data.timestamp is string && data.timestamp.size() <= 50 &&
+             data.status is string && (data.status == 'taken' || data.status == 'skipped') &&
+             (data.keys().hasAll(['id']) ? (data.id is string && data.id.size() <= 128) : true);
+    }
+
+    // Validation Blueprint: ActionLog
+    function isValidActionLog(data) {
+      return data.keys().hasAll(['type', 'medicationId', 'medicationName', 'timestamp']) &&
+             data.type is string && (data.type == 'added' || data.type == 'deleted' || data.type == 'updated' || data.type == 'taken' || data.type == 'skipped' || data.type == 'bulk_updated') &&
+             data.medicationId is string && data.medicationId.size() <= 128 &&
+             data.medicationName is string && data.medicationName.size() <= 200 &&
+             data.timestamp is string && data.timestamp.size() <= 50 &&
+             (data.keys().hasAll(['details']) ? (data.details is string && data.details.size() <= 1000) : true) &&
+             (data.keys().hasAll(['id']) ? (data.id is string && data.id.size() <= 128) : true);
+    }
+
+    // Paths
+    match /users/{userId} {
+      allow read: if isOwner(userId) && isValidId(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUser(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['email']) && incoming().createdAt == existing().createdAt;
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /medications/{medicationId} {
+        allow read: if isOwner(userId) && isValidId(userId);
+        allow list: if isOwner(userId) && isValidId(userId);
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(medicationId) && isValidMedication(incoming());
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(medicationId) && isValidMedication(incoming()) && 
+                        incoming().diff(existing()).affectedKeys().hasOnly([
+                          'name', 'dosage', 'frequency', 'times', 'stock', 'totalStock', 
+                          'unit', 'startDate', 'active', 'notes', 'reminderEnabled', 'id', 'imageUrl', 'reminderSound'
+                        ]);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(medicationId);
+      }
+
+      match /logs/{logId} {
+        allow read: if isOwner(userId) && isValidId(userId);
+        allow list: if isOwner(userId) && isValidId(userId);
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(logId) && isValidMedicationLog(incoming()) &&
+                      exists(/databases/$(database)/documents/users/$(userId)/medications/$(incoming().medicationId));
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(logId) && isValidMedicationLog(incoming()) && 
+                        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'timestamp', 'id']) &&
+                        incoming().medicationId == existing().medicationId;
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(logId);
+      }
+      match /actionLogs/{actionLogId} {
+        allow read: if isOwner(userId) && isValidId(userId);
+        allow list: if isOwner(userId) && isValidId(userId);
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(actionLogId) && isValidActionLog(incoming());
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(actionLogId) && isValidActionLog(incoming()) && 
+                        incoming().diff(existing()).affectedKeys().hasOnly(['id']);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(actionLogId);
+      }
+    }
+  }
+}
